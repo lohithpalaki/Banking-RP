@@ -1,41 +1,87 @@
 import streamlit as st
-import pandas as pd
 import joblib
 import numpy as np
+import pandas as pd
 
-# Load model only (no scaler)
-model = joblib.load('svc_model.pkl')
+# Dummy login credentials
+auth_users = {"Risk_Admin": "Secure123"}
 
-# Define the input fields (in same order as training)
-feature_cols = [
-    'Age', 'Account_Balance', 'Transaction_Amount',
-    'Account_Balance_After_Transaction', 'Loan_Amount', 'Interest_Rate',
-    'Loan_Term', 'Credit_Limit', 'Credit_Card_Balance',
-    'Minimum_Payment_Due', 'Rewards_Points'
-]
+# Session management
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+if "page" not in st.session_state:
+    st.session_state.page = "Login"
 
-st.title("Customer Anomaly Prediction")
+# Sidebar navigation
+if st.session_state.logged_in:
+    st.sidebar.title("Navigation")
+    st.session_state.page = st.sidebar.selectbox(
+        "Go to", 
+        ["Predict One", "Predict from CSV"], 
+        index=["Predict One", "Predict from CSV"].index(st.session_state.page)
+        if st.session_state.page in ["Predict One", "Predict from CSV"] else 0
+    )
+    if st.sidebar.button("Logout"):
+        st.session_state.logged_in = False
+        st.session_state.page = "Login"
+        st.experimental_rerun()
+else:
+    st.session_state.page = "Login"
 
-# Option to upload CSV or manual entry
-option = st.radio("Choose input method:", ["Manual Entry", "Upload CSV"])
+# Login Page
+def login_page():
+    st.title("🔐 Login")
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
+    if st.button("Login"):
+        if username in auth_users and auth_users[username] == password:
+            st.session_state.logged_in = True
+            st.session_state.page = "Predict One"
+            st.success("Login successful!")
+        else:
+            st.error("Invalid credentials")
 
-if option == "Manual Entry":
-    user_input = {}
-    for col in feature_cols:
-        user_input[col] = st.number_input(f"{col}", value=0.0)
-    input_df = pd.DataFrame([user_input])
-elif option == "Upload CSV":
-    uploaded_file = st.file_uploader("Upload CSV file", type=["csv"])
-    if uploaded_file is not None:
-        input_df = pd.read_csv(uploaded_file)
+# Predict one sample
+def single_prediction_page():
+    st.title("📌 Predict Single Customer Risk")
 
-# Predict when input_df is ready
-if 'input_df' in locals():
-    try:
-        predictions = model.predict(input_df[feature_cols])
-        input_df['Predicted_Anomaly'] = predictions
-        st.subheader("Prediction Results")
-        st.write(input_df)
-        st.download_button("Download Results", input_df.to_csv(index=False), "predictions.csv", "text/csv")
-    except Exception as e:
-        st.error(f"Error during prediction: {e}")
+    total_spent = st.number_input("Total Spent", 0.0, 1e7, 5000.0)
+    loyalty_points = st.number_input("Loyalty Points Earned", 0, 100000, 250)
+    referrals = st.number_input("Referral Count", 0, 1000, 5)
+    cashback = st.number_input("Cashback Received", 0.0, 100000.0, 300.0)
+    satisfaction = st.slider("Customer Satisfaction Score", 0.0, 10.0, 7.5)
+
+    if st.button("Predict Risk"):
+        model = joblib.load("lgbm_model.pkl")
+        input_data = np.array([[total_spent, loyalty_points, referrals, cashback, satisfaction]])
+        prediction = model.predict(input_data)[0]
+        label_map = {0: "High", 1: "Low", 2: "Medium"}
+        st.success(f"Predicted Risk Category: {label_map[prediction]}")
+
+# Predict batch from CSV
+def batch_prediction_page():
+    st.title("📂 Predict Risk for Batch (CSV Upload)")
+    uploaded_file = st.file_uploader("Upload CSV", type=["csv"])
+    if uploaded_file:
+        df = pd.read_csv(uploaded_file)
+        st.write("📄 Uploaded Data", df.head())
+
+        expected_cols = ['Total_Spent', 'Loyalty_Points_Earned', 'Referral_Count', 'Cashback_Received', 'Customer_Satisfaction_Score']
+        if all(col in df.columns for col in expected_cols):
+            model = joblib.load("lgbm_model.pkl")
+            preds = model.predict(df[expected_cols])
+            label_map = {0: "High", 1: "Low", 2: "Medium"}
+            df['Predicted_Risk'] = [label_map[p] for p in preds]
+            st.write("📊 Predictions", df)
+            csv = df.to_csv(index=False).encode('utf-8')
+            st.download_button("⬇ Download Predictions", csv, "predicted_risks.csv", "text/csv")
+        else:
+            st.error(f"CSV must contain columns: {', '.join(expected_cols)}")
+
+# Router
+if st.session_state.page == "Login":
+    login_page()
+elif st.session_state.page == "Predict One":
+    single_prediction_page()
+elif st.session_state.page == "Predict from CSV":
+    batch_prediction_page()
