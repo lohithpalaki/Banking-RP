@@ -3,7 +3,7 @@ import pandas as pd
 import joblib
 import numpy as np
 
-# Load model and scaler
+# Load model only (no scaler)
 model = joblib.load('svc_model.pkl')
 
 # Define the input fields (in same order as training)
@@ -24,16 +24,18 @@ if option == "Manual Entry":
     for col in feature_cols:
         user_input[col] = st.number_input(f"{col}", value=0.0)
     input_df = pd.DataFrame([user_input])
-else:
+elif option == "Upload CSV":
     uploaded_file = st.file_uploader("Upload CSV file", type=["csv"])
     if uploaded_file is not None:
         input_df = pd.read_csv(uploaded_file)
 
-# Predict when data is ready
+# Predict when input_df is ready
 if 'input_df' in locals():
-    input_scaled = scaler.transform(input_df)
-    predictions = model.predict(input_scaled)
-    input_df['Predicted_Anomaly'] = predictions
-    st.subheader("Prediction Results")
-    st.write(input_df)
-    st.download_button("Download Results", input_df.to_csv(index=False), "predictions.csv", "text/csv")
+    try:
+        predictions = model.predict(input_df[feature_cols])
+        input_df['Predicted_Anomaly'] = predictions
+        st.subheader("Prediction Results")
+        st.write(input_df)
+        st.download_button("Download Results", input_df.to_csv(index=False), "predictions.csv", "text/csv")
+    except Exception as e:
+        st.error(f"Error during prediction: {e}")
