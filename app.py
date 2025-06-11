@@ -5,7 +5,6 @@ import numpy as np
 
 # Load model and scaler
 model = joblib.load('svc_model.pkl')
-scaler = joblib.load('scaler.pkl')
 
 # Define the input fields (in same order as training)
 feature_cols = [
