@@ -6,7 +6,7 @@ import pandas as pd
 # Dummy login credentials
 auth_users = {"Risk_Admin": "Secure123"}
 
-# Session management
+# Session state management
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 if "page" not in st.session_state:
@@ -41,44 +41,96 @@ def login_page():
         else:
             st.error("Invalid credentials")
 
-# Predict one sample
+# Predict single input
 def single_prediction_page():
-    st.title("📌 Predict Single Customer Risk")
+    st.title("📌 Predict Customer Risk (Single Entry)")
 
-    total_spent = st.number_input("Total Spent", 0.0, 1e7, 5000.0)
-    loyalty_points = st.number_input("Loyalty Points Earned", 0, 100000, 250)
-    referrals = st.number_input("Referral Count", 0, 1000, 5)
-    cashback = st.number_input("Cashback Received", 0.0, 100000.0, 300.0)
-    satisfaction = st.slider("Customer Satisfaction Score", 0.0, 10.0, 7.5)
+    Age = st.number_input("Age", 18, 100, 30)
+    Gender = st.selectbox("Gender", ["Male", "Female", "Other"])
+    Contact_Number = st.text_input("Contact Number", "9876543210")
+    Account_Type = st.selectbox("Account Type", ["Savings", "Current"])
+    Account_Balance = st.number_input("Account Balance", 0.0, 1e7, 50000.0)
+    Transaction_Type = st.selectbox("Transaction Type", ["Credit", "Debit"])
+    Transaction_Amount = st.number_input("Transaction Amount", 0.0, 1e6, 10000.0)
+    Account_Balance_After_Transaction = st.number_input("Balance After Transaction", 0.0, 1e7, 40000.0)
+    Anomaly = st.selectbox("Anomaly Detected?", ["Yes", "No"])
+    Loan_Amount = st.number_input("Loan Amount", 0.0, 1e7, 200000.0)
+    Loan_Type = st.selectbox("Loan Type", ["Home", "Car", "Personal", "Education"])
+    Interest_Rate = st.slider("Interest Rate (%)", 0.0, 25.0, 8.5)
+    Loan_Term = st.number_input("Loan Term (months)", 1, 360, 60)
+    Loan_Status = st.selectbox("Loan Status", ["Approved", "Rejected", "Pending"])
+    Card_Type = st.selectbox("Card Type", ["Gold", "Silver", "Platinum"])
+    Credit_Limit = st.number_input("Credit Limit", 0.0, 1e6, 100000.0)
+    Credit_Card_Balance = st.number_input("Credit Card Balance", 0.0, 1e6, 20000.0)
+    Minimum_Payment_Due = st.number_input("Minimum Payment Due", 0.0, 1e6, 5000.0)
+    Rewards_Points = st.number_input("Reward Points", 0, 100000, 1200)
+    Feedback_Type = st.selectbox("Feedback Type", ["Complaint", "Suggestion", "Appreciation"])
+    Resolution_Status = st.selectbox("Resolution Status", ["Resolved", "Unresolved", "Pending"])
 
     if st.button("Predict Risk"):
         model = joblib.load("lgbm_model.pkl")
-        input_data = np.array([[total_spent, loyalty_points, referrals, cashback, satisfaction]])
+
+        input_data = pd.DataFrame([{
+            'Age': Age,
+            'Gender': Gender,
+            'Contact_Number': Contact_Number,
+            'Account_Type': Account_Type,
+            'Account_Balance': Account_Balance,
+            'Transaction_Type': Transaction_Type,
+            'Transaction_Amount': Transaction_Amount,
+            'Account_Balance_After_Transaction': Account_Balance_After_Transaction,
+            'Anomaly': Anomaly,
+            'Loan_Amount': Loan_Amount,
+            'Loan_Type': Loan_Type,
+            'Interest_Rate': Interest_Rate,
+            'Loan_Term': Loan_Term,
+            'Loan_Status': Loan_Status,
+            'Card_Type': Card_Type,
+            'Credit_Limit': Credit_Limit,
+            'Credit_Card_Balance': Credit_Card_Balance,
+            'Minimum_Payment_Due': Minimum_Payment_Due,
+            'Rewards_Points': Rewards_Points,
+            'Feedback_Type': Feedback_Type,
+            'Resolution_Status': Resolution_Status
+        }])
+
+        # Encode categorical columns
+        for col in input_data.select_dtypes(include='object').columns:
+            input_data[col] = input_data[col].astype("category").cat.codes
+
         prediction = model.predict(input_data)[0]
         label_map = {0: "High", 1: "Low", 2: "Medium"}
         st.success(f"Predicted Risk Category: {label_map[prediction]}")
 
-# Predict batch from CSV
+# Predict from uploaded CSV
 def batch_prediction_page():
-    st.title("📂 Predict Risk for Batch (CSV Upload)")
+    st.title("📂 Predict Risk from CSV")
     uploaded_file = st.file_uploader("Upload CSV", type=["csv"])
     if uploaded_file:
         df = pd.read_csv(uploaded_file)
         st.write("📄 Uploaded Data", df.head())
 
-        expected_cols = ['Total_Spent', 'Loyalty_Points_Earned', 'Referral_Count', 'Cashback_Received', 'Customer_Satisfaction_Score']
+        expected_cols = ['Age', 'Gender', 'Contact_Number', 'Account_Type', 'Account_Balance',
+                         'Transaction_Type', 'Transaction_Amount', 'Account_Balance_After_Transaction', 'Anomaly',
+                         'Loan_Amount', 'Loan_Type', 'Interest_Rate', 'Loan_Term', 'Loan_Status',
+                         'Card_Type', 'Credit_Limit', 'Credit_Card_Balance', 'Minimum_Payment_Due',
+                         'Rewards_Points', 'Feedback_Type', 'Resolution_Status']
+
         if all(col in df.columns for col in expected_cols):
             model = joblib.load("lgbm_model.pkl")
-            preds = model.predict(df[expected_cols])
+            df_encoded = df.copy()
+            for col in df_encoded.select_dtypes(include='object').columns:
+                df_encoded[col] = df_encoded[col].astype("category").cat.codes
+            preds = model.predict(df_encoded[expected_cols])
             label_map = {0: "High", 1: "Low", 2: "Medium"}
             df['Predicted_Risk'] = [label_map[p] for p in preds]
             st.write("📊 Predictions", df)
             csv = df.to_csv(index=False).encode('utf-8')
             st.download_button("⬇ Download Predictions", csv, "predicted_risks.csv", "text/csv")
         else:
-            st.error(f"CSV must contain columns: {', '.join(expected_cols)}")
+            st.error(f"CSV must contain required columns. Found: {list(df.columns)}")
 
-# Router
+# Route the page
 if st.session_state.page == "Login":
     login_page()
 elif st.session_state.page == "Predict One":
