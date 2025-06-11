@@ -1,12 +1,13 @@
 import streamlit as st
 import pandas as pd
-import pickle
+import joblib
+import numpy as np
 
-# Load the trained SVM model
-with open('svc_model.pkl', 'rb') as f:
-    model = pickle.load(f)
+# Load model and scaler
+model = joblib.load('svc_model.pkl')
+scaler = joblib.load('scaler.pkl')
 
-# Define the required features
+# Define the input fields (in same order as training)
 feature_cols = [
     'Age', 'Account_Balance', 'Transaction_Amount',
     'Account_Balance_After_Transaction', 'Loan_Amount', 'Interest_Rate',
@@ -14,33 +15,26 @@ feature_cols = [
     'Minimum_Payment_Due', 'Rewards_Points'
 ]
 
-st.title("Anomaly Prediction App")
-st.markdown("Upload a CSV file with customer details to predict anomalies (-1 = Anomaly, 1 = Normal).")
+st.title("Customer Anomaly Prediction")
 
-uploaded_file = st.file_uploader("Upload CSV", type=["csv"])
+# Option to upload CSV or manual entry
+option = st.radio("Choose input method:", ["Manual Entry", "Upload CSV"])
 
-if uploaded_file is not None:
-    try:
-        data = pd.read_csv(uploaded_file)
+if option == "Manual Entry":
+    user_input = {}
+    for col in feature_cols:
+        user_input[col] = st.number_input(f"{col}", value=0.0)
+    input_df = pd.DataFrame([user_input])
+else:
+    uploaded_file = st.file_uploader("Upload CSV file", type=["csv"])
+    if uploaded_file is not None:
+        input_df = pd.read_csv(uploaded_file)
 
-        if not all(col in data.columns for col in feature_cols):
-            st.error("Uploaded file must contain all required columns.")
-            st.write("Required columns:", feature_cols)
-        else:
-            X_input = data[feature_cols]
-            prediction = model.predict(X_input)
-            data['Prediction'] = prediction
-            st.success("Prediction completed!")
-            st.dataframe(data)
-
-            csv = data.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="Download Predictions",
-                data=csv,
-                file_name='predictions.csv',
-                mime='text/csv'
-            )
-    except Exception as e:
-        st.error(f"Error: {e}")
-
-st.markdown("📥 [Download Sample Input Template](sample_input_template.csv)")
+# Predict when data is ready
+if 'input_df' in locals():
+    input_scaled = scaler.transform(input_df)
+    predictions = model.predict(input_scaled)
+    input_df['Predicted_Anomaly'] = predictions
+    st.subheader("Prediction Results")
+    st.write(input_df)
+    st.download_button("Download Results", input_df.to_csv(index=False), "predictions.csv", "text/csv")
